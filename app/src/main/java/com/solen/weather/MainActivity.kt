@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Air
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.LocationOn
@@ -84,6 +85,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -264,14 +266,6 @@ private fun SolenScreen() {
                         )
                     }
                 }
-                RoundIconButton(
-                    icon = "search",
-                    description = "Найти город",
-                    onClick = {
-                        searchText = ""
-                        searchOpen = true
-                    }
-                )
             }
 
             PullToRefreshBox(
@@ -417,12 +411,14 @@ private fun SolenScreen() {
                                     fontSize = 12.sp
                                 )
                             }
-                            androidx.compose.material3.Icon(
-                                imageVector = if (hasExpectedPrecipitation) Icons.Outlined.WaterDrop else Icons.Outlined.CheckCircleOutline,
-                                contentDescription = null,
-                                tint = Color(0xFFB9D8FF),
-                                modifier = Modifier.size(25.dp)
-                            )
+                            if (hasExpectedPrecipitation) {
+                                androidx.compose.material3.Icon(
+                                    imageVector = Icons.Outlined.WaterDrop,
+                                    contentDescription = null,
+                                    tint = Color(0xFFB9D8FF),
+                                    modifier = Modifier.size(25.dp)
+                                )
+                            }
                         }
                         if (current != null && hasExpectedPrecipitation) {
                             Spacer(Modifier.height(17.dp))
@@ -468,7 +464,7 @@ private fun SolenScreen() {
                 SectionTitle("НА 7 ДНЕЙ", "Неделя впереди")
                 Spacer(Modifier.height(11.dp))
                 GlassPanel {
-                    Column(modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
                         val days = current?.days.orEmpty()
                         if (days.isEmpty()) {
                             repeat(4) { PlaceholderDay() }
@@ -584,21 +580,50 @@ private fun SolenScreen() {
                     )
                 )
                 Spacer(Modifier.height(18.dp))
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                            requestDeviceLocation(context) { lat, lon -> place = Place("Моё местоположение", lat, lon); searchOpen = false }
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                                requestDeviceLocation(context) { lat, lon ->
+                                    place = Place("Моё местоположение", lat, lon)
+                                    searchOpen = false
+                                }
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                            }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    androidx.compose.material3.Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = Color(0xFFB9D8FF))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Определить моё местоположение", color = Color(0xFFD7E6F7))
+                    androidx.compose.material3.Icon(
+                        Icons.Outlined.LocationOn,
+                        contentDescription = null,
+                        tint = Color(0xFFB9D8FF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Моё местоположение", color = pale, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Определить по GPS", color = muted, fontSize = 11.sp)
+                    }
+                    androidx.compose.material3.Icon(
+                        Icons.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = muted,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
-                Spacer(Modifier.height(10.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 14.dp, end = 14.dp)
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.07f))
+                )
+                Spacer(Modifier.height(12.dp))
                 Text(if (searchText.trim().length < 2) "ПОПУЛЯРНЫЕ ГОРОДА" else "РЕЗУЛЬТАТЫ ПОИСКА", color = Color(0xFFC3D2E5), fontSize = 11.sp, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(8.dp))
                 if (searching) {
@@ -611,11 +636,13 @@ private fun SolenScreen() {
                     Text(if (searchText.length >= 2) "Ничего не найдено. Проверь написание." else "Начни вводить название города.", color = Color(0xFFC3D2E5), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
-                        cityResults.forEach { city ->
+                        cityResults.forEachIndexed { index, city ->
                             Row(
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable { place = city; searchOpen = false }
-                                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                                    .padding(horizontal = 14.dp, vertical = 15.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
@@ -625,6 +652,21 @@ private fun SolenScreen() {
                                         Text(city.country, color = Color(0xFFC3D2E5), fontSize = 12.sp)
                                     }
                                 }
+                                androidx.compose.material3.Icon(
+                                    Icons.Outlined.KeyboardArrowRight,
+                                    contentDescription = "Выбрать города",
+                                    tint = muted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (index < cityResults.lastIndex) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 14.dp, end = 14.dp)
+                                        .height(1.dp)
+                                        .background(Color.White.copy(alpha = 0.07f))
+                                )
                             }
                         }
                     }
@@ -834,8 +876,8 @@ private fun WeatherDetail(
                 androidx.compose.material3.Icon(
                     imageVector = if (icon == WeatherDetailIcon.SUNRISE) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
                     contentDescription = null,
-                    tint = Color(0xFFB9D8FF),
-                    modifier = Modifier.align(Alignment.TopEnd).size(11.dp)
+                    tint = Color(0xFFE4EFFB),
+                    modifier = Modifier.align(Alignment.TopEnd).size(14.dp)
                 )
             }
         }
@@ -878,25 +920,59 @@ private fun DayRow(day: DayForecast, index: Int, weekMin: Int, weekMax: Int) {
 
 @Composable
 private fun TemperatureRange(min: Int, max: Int, weekMin: Int, weekMax: Int, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.height(6.dp)) {
+    Canvas(modifier = modifier.height(7.dp)) {
         val width = size.width
+        val centerY = size.height / 2
+        val stroke = 5.dp.toPx()
         drawLine(
-            color = Color.White.copy(alpha = 0.16f),
-            start = Offset(0f, size.height / 2),
-            end = Offset(width, size.height / 2),
-            strokeWidth = 5.dp.toPx(),
+            color = Color.White.copy(alpha = 0.14f),
+            start = Offset(0f, centerY),
+            end = Offset(width, centerY),
+            strokeWidth = stroke,
             cap = StrokeCap.Round
         )
-        val spread = (weekMax - weekMin).coerceAtLeast(1)
-        val start = ((min - weekMin).toFloat() / spread).coerceIn(0f, 1f)
-        val end = ((max - weekMin).toFloat() / spread).coerceIn(start, 1f)
-        drawLine(
-            brush = Brush.horizontalGradient(listOf(Color(0xFF79BDF7), Color(0xFFE9D5AD))),
-            start = Offset(width * start, size.height / 2),
-            end = Offset(width * end, size.height / 2),
-            strokeWidth = 5.dp.toPx(),
-            cap = StrokeCap.Round
-        )
+        val spread = (weekMax - weekMin).coerceAtLeast(1).toFloat()
+        fun xAt(temperature: Int): Float =
+            (width * ((temperature - weekMin) / spread)).coerceIn(0f, width)
+
+        val startX = xAt(min)
+        val endX = xAt(max)
+        val zeroX = xAt(0)
+        val belowZero = Color(0xFF79BDF7)
+        val aboveZero = Color(0xFFE9D5AD)
+
+        when {
+            max <= 0 -> drawLine(
+                color = belowZero,
+                start = Offset(startX, centerY),
+                end = Offset(endX, centerY),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+            min >= 0 -> drawLine(
+                color = aboveZero,
+                start = Offset(startX, centerY),
+                end = Offset(endX, centerY),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+            else -> {
+                drawLine(
+                    color = belowZero,
+                    start = Offset(startX, centerY),
+                    end = Offset(zeroX, centerY),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = aboveZero,
+                    start = Offset(zeroX, centerY),
+                    end = Offset(endX, centerY),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+            }
+        }
     }
 }
 
@@ -915,23 +991,26 @@ private fun PlaceholderDay() {
 
 @Composable
 private fun BottomBar(onCitiesClick: () -> Unit) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0A121F).copy(alpha = 0.78f))
-            .border(width = 1.dp, color = Color.White.copy(alpha = 0.07f))
             .padding(
-                start = 28.dp,
-                end = 28.dp,
-                top = 12.dp,
-                bottom = 10.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 6.dp
             ),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+        contentAlignment = Alignment.Center
     ) {
-        BottomItem(Icons.Outlined.WbSunny, "Сегодня", true, {})
-        Spacer(Modifier.width(68.dp))
-        BottomItem(Icons.Outlined.Public, "Города", false, onCitiesClick)
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(22.dp))
+                .background(Color(0xFF0A121F).copy(alpha = 0.88f))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(22.dp))
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BottomItem(Icons.Outlined.WbSunny, "Сегодня", true, {})
+            BottomItem(Icons.Outlined.Public, "Города", false, onCitiesClick)
+        }
     }
 }
 
@@ -939,19 +1018,19 @@ private fun BottomBar(onCitiesClick: () -> Unit) {
 private fun BottomItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 2.dp)
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
         androidx.compose.material3.Icon(
             imageVector = icon,
             contentDescription = label,
             tint = if (selected) Color(0xFFB9D8FF) else Color(0xFFC3D2E5),
-            modifier = Modifier.size(21.dp)
+            modifier = Modifier.size(18.dp)
         )
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(2.dp))
         Text(
             label,
             color = if (selected) pale else muted.copy(alpha = 0.72f),
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )
         if (selected) {
@@ -1115,7 +1194,7 @@ private fun requestDeviceLocation(context: Context, onResult: (Double, Double) -
 }
 
 private fun weatherDescription(code: Int): String = when (code) {
-    0 -> "Ясное небо"
+    0 -> "Ясно"
     1 -> "Преимущественно ясно"
     2 -> "Переменная облачность"
     3 -> "Пасмурно"
@@ -1134,9 +1213,61 @@ private fun weatherDescription(code: Int): String = when (code) {
 
 @Composable
 private fun WeatherGlyph(code: Int, isDay: Boolean, modifier: Modifier = Modifier, size: Int = 22) {
+    val iconTint = Color(0xFFD7E6F7)
+
+    if (!isDay && code in 0..1) {
+        Box(modifier = modifier.size(size.dp)) {
+            Canvas(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size((size * 0.82f).dp)
+            ) {
+                val w = this.size.width
+                val h = this.size.height
+                val crescent = Path().apply {
+                    moveTo(w * 0.72f, h * 0.06f)
+                    quadraticTo(w * 0.12f, h * 0.06f, w * 0.12f, h * 0.52f)
+                    quadraticTo(w * 0.14f, h * 0.96f, w * 0.57f, h * 0.94f)
+                    quadraticTo(w * 0.29f, h * 0.75f, w * 0.34f, h * 0.45f)
+                    quadraticTo(w * 0.40f, h * 0.16f, w * 0.72f, h * 0.06f)
+                    close()
+                }
+                drawPath(crescent, iconTint)
+            }
+            if (code == 1) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Outlined.Cloud,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size((size * 0.56f).dp)
+                )
+            }
+        }
+        return
+    }
+
+    if (isDay && code == 1) {
+        Box(modifier = modifier.size(size.dp)) {
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Outlined.WbSunny,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.align(Alignment.TopStart).size((size * 0.76f).dp)
+            )
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Outlined.Cloud,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.align(Alignment.BottomEnd).size((size * 0.58f).dp)
+            )
+        }
+        return
+    }
+
     val image = when (code) {
-        0 -> if (isDay) Icons.Outlined.WbSunny else Icons.Outlined.NightsStay
-        1 -> if (isDay) Icons.Outlined.WbSunny else Icons.Outlined.NightsStay
+        0 -> Icons.Outlined.WbSunny
         2, 3, 45, 48 -> Icons.Outlined.Cloud
         51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> Icons.Outlined.WaterDrop
         71, 73, 75, 77, 85, 86 -> Icons.Outlined.AcUnit
@@ -1146,7 +1277,7 @@ private fun WeatherGlyph(code: Int, isDay: Boolean, modifier: Modifier = Modifie
     androidx.compose.material3.Icon(
         imageVector = image,
         contentDescription = weatherDescription(code),
-        tint = Color(0xFFD7E6F7),
+        tint = iconTint,
         modifier = modifier.size(size.dp)
     )
 }
