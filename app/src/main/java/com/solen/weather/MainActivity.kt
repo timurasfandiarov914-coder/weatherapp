@@ -45,8 +45,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
-import androidx.compose.material.icons.outlined.ArrowDownward
-import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
@@ -84,6 +82,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
@@ -289,7 +288,8 @@ private fun SolenScreen() {
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 22.dp)
-                    .padding(bottom = 16.dp)
+                    // Leave enough scrollable space for the floating navigation dock.
+                    .padding(bottom = 124.dp)
             ) {
                 Spacer(Modifier.height(18.dp))
                 Text(
@@ -314,6 +314,7 @@ private fun SolenScreen() {
                             fontWeight = FontWeight.Medium,
                             letterSpacing = (-5).sp
                         )
+                        Spacer(Modifier.height(11.dp))
                         Text(
                             text = current?.let { weatherDescription(it.code) } ?: if (loading) "Загружаем небо…" else "Нет данных",
                             color = pale,
@@ -407,7 +408,7 @@ private fun SolenScreen() {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = if (current == null) "Обновим после загрузки" else if (hasExpectedPrecipitation) "Вероятность и интенсивность на ближайшие часы" else "В ближайшие 24 часа дождь маловероятен",
-                                    color = muted,
+                                    color = Color(0xFFD0DCEB),
                                     fontSize = 12.sp
                                 )
                             }
@@ -464,7 +465,7 @@ private fun SolenScreen() {
                 SectionTitle("НА 7 ДНЕЙ", "Неделя впереди")
                 Spacer(Modifier.height(11.dp))
                 GlassPanel {
-                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)) {
                         val days = current?.days.orEmpty()
                         if (days.isEmpty()) {
                             repeat(4) { PlaceholderDay() }
@@ -563,7 +564,11 @@ private fun SolenScreen() {
                 TextField(
                     value = searchText,
                     onValueChange = { searchText = it },
-                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        .clip(RoundedCornerShape(17.dp))
+                        .border(1.dp, glassBorder, RoundedCornerShape(17.dp)),
                     shape = RoundedCornerShape(17.dp),
                     singleLine = true,
                     leadingIcon = { androidx.compose.material3.Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFFD7E6F7)) },
@@ -579,7 +584,7 @@ private fun SolenScreen() {
                         cursorColor = Color(0xFFB9D8FF)
                     )
                 )
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(7.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -846,6 +851,68 @@ private fun PrecipitationLine(hours: List<HourForecast>) {
 private enum class WeatherDetailIcon { HUMIDITY, WIND, SUNRISE, SUNSET }
 
 @Composable
+private fun SunriseSunsetGlyph(
+    sunrise: Boolean,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    val iconColor = Color(0xFFD7E6F7)
+    Canvas(modifier = modifier) {
+        val stroke = 1.8.dp.toPx()
+        val cx = size.width * 0.39f
+        val horizonY = size.height * 0.70f
+        val radius = size.width * 0.22f
+
+        // A half sun emerging from / dipping below a clean horizon line.
+        drawArc(
+            color = iconColor,
+            startAngle = 180f,
+            sweepAngle = -180f,
+            useCenter = false,
+            topLeft = Offset(cx - radius, horizonY - radius),
+            size = Size(radius * 2f, radius * 2f),
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+        drawLine(
+            color = iconColor,
+            start = Offset(size.width * 0.06f, horizonY),
+            end = Offset(size.width * 0.73f, horizonY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+
+        val arrowX = size.width * 0.83f
+        val arrowTop = size.height * 0.19f
+        val arrowBottom = size.height * 0.62f
+        val arrowTipY = if (sunrise) arrowTop else arrowBottom
+        val arrowTailY = if (sunrise) arrowBottom else arrowTop
+        drawLine(
+            color = iconColor,
+            start = Offset(arrowX, arrowTailY),
+            end = Offset(arrowX, arrowTipY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        val head = size.width * 0.12f
+        val direction = if (sunrise) 1f else -1f
+        drawLine(
+            color = iconColor,
+            start = Offset(arrowX - head, arrowTipY + direction * head),
+            end = Offset(arrowX, arrowTipY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = iconColor,
+            start = Offset(arrowX + head, arrowTipY + direction * head),
+            end = Offset(arrowX, arrowTipY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
 private fun WeatherDetail(
     modifier: Modifier,
     icon: WeatherDetailIcon,
@@ -855,8 +922,7 @@ private fun WeatherDetail(
     val image = when (icon) {
         WeatherDetailIcon.HUMIDITY -> Icons.Outlined.WaterDrop
         WeatherDetailIcon.WIND -> Icons.Outlined.Air
-        WeatherDetailIcon.SUNRISE -> Icons.Outlined.WbTwilight
-        WeatherDetailIcon.SUNSET -> Icons.Outlined.WbTwilight
+        WeatherDetailIcon.SUNRISE, WeatherDetailIcon.SUNSET -> null
     }
     Column(
         modifier = modifier
@@ -865,21 +931,19 @@ private fun WeatherDetail(
             .border(1.dp, glassBorder, RoundedCornerShape(21.dp))
             .padding(15.dp)
     ) {
-        Box(modifier = Modifier.size(22.dp)) {
+        if (icon == WeatherDetailIcon.SUNRISE || icon == WeatherDetailIcon.SUNSET) {
+            SunriseSunsetGlyph(
+                sunrise = icon == WeatherDetailIcon.SUNRISE,
+                contentDescription = title,
+                modifier = Modifier.size(27.dp)
+            )
+        } else if (image != null) {
             androidx.compose.material3.Icon(
                 imageVector = image,
                 contentDescription = title,
                 tint = Color(0xFFD7E6F7),
-                modifier = Modifier.align(Alignment.Center).size(20.dp)
+                modifier = Modifier.size(22.dp)
             )
-            if (icon == WeatherDetailIcon.SUNRISE || icon == WeatherDetailIcon.SUNSET) {
-                androidx.compose.material3.Icon(
-                    imageVector = if (icon == WeatherDetailIcon.SUNRISE) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
-                    contentDescription = null,
-                    tint = Color(0xFFE4EFFB),
-                    modifier = Modifier.align(Alignment.TopEnd).size(14.dp)
-                )
-            }
         }
         Spacer(Modifier.height(12.dp))
         Text(title, color = muted, fontSize = 11.sp)
@@ -891,7 +955,7 @@ private fun WeatherDetail(
 @Composable
 private fun DayRow(day: DayForecast, index: Int, weekMin: Int, weekMax: Int) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -920,15 +984,16 @@ private fun DayRow(day: DayForecast, index: Int, weekMin: Int, weekMax: Int) {
 
 @Composable
 private fun TemperatureRange(min: Int, max: Int, weekMin: Int, weekMax: Int, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.height(7.dp)) {
+    Canvas(modifier = modifier.height(8.dp)) {
         val width = size.width
         val centerY = size.height / 2
-        val stroke = 5.dp.toPx()
+        val trackStroke = 6.dp.toPx()
+        val rangeStroke = 4.dp.toPx()
         drawLine(
-            color = Color.White.copy(alpha = 0.14f),
+            color = Color(0xFFB9C9DC).copy(alpha = 0.36f),
             start = Offset(0f, centerY),
             end = Offset(width, centerY),
-            strokeWidth = stroke,
+            strokeWidth = trackStroke,
             cap = StrokeCap.Round
         )
         val spread = (weekMax - weekMin).coerceAtLeast(1).toFloat()
@@ -946,14 +1011,14 @@ private fun TemperatureRange(min: Int, max: Int, weekMin: Int, weekMax: Int, mod
                 color = belowZero,
                 start = Offset(startX, centerY),
                 end = Offset(endX, centerY),
-                strokeWidth = stroke,
+                strokeWidth = rangeStroke,
                 cap = StrokeCap.Round
             )
             min >= 0 -> drawLine(
                 color = aboveZero,
                 start = Offset(startX, centerY),
                 end = Offset(endX, centerY),
-                strokeWidth = stroke,
+                strokeWidth = rangeStroke,
                 cap = StrokeCap.Round
             )
             else -> {
@@ -961,14 +1026,14 @@ private fun TemperatureRange(min: Int, max: Int, weekMin: Int, weekMax: Int, mod
                     color = belowZero,
                     start = Offset(startX, centerY),
                     end = Offset(zeroX, centerY),
-                    strokeWidth = stroke,
+                    strokeWidth = rangeStroke,
                     cap = StrokeCap.Round
                 )
                 drawLine(
                     color = aboveZero,
                     start = Offset(zeroX, centerY),
                     end = Offset(endX, centerY),
-                    strokeWidth = stroke,
+                    strokeWidth = rangeStroke,
                     cap = StrokeCap.Round
                 )
             }
@@ -1004,8 +1069,8 @@ private fun BottomBar(onCitiesClick: () -> Unit) {
                 .clip(RoundedCornerShape(22.dp))
                 .background(Color(0xFF0A121F).copy(alpha = 0.88f))
                 .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(22.dp))
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
+                .padding(horizontal = 17.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BottomItem(Icons.Outlined.WbSunny, "Сегодня", true, {})
