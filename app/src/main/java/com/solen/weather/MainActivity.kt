@@ -57,7 +57,9 @@ import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material.icons.outlined.WbTwilight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -162,6 +164,7 @@ private val pale = Color(0xFFF3F7FC)
 private val glass = Color.White.copy(alpha = 0.075f)
 private val glassBorder = Color.White.copy(alpha = 0.10f)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SolenScreen() {
     val context = LocalContext.current
@@ -169,6 +172,7 @@ private fun SolenScreen() {
     var place by remember { mutableStateOf(Place("Уфа", 54.7388, 55.9721, "Россия")) }
     var forecast by remember { mutableStateOf<WeatherForecast?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
@@ -266,9 +270,25 @@ private fun SolenScreen() {
                 )
             }
 
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = {
+                    scope.launch {
+                        refreshing = true
+                        error = null
+                        try {
+                            forecast = loadForecast(place)
+                        } catch (_: Exception) {
+                            error = "Не удалось обновить погоду. Проверь интернет."
+                        }
+                        refreshing = false
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
             Column(
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 22.dp)
                     .padding(bottom = 16.dp)
@@ -468,6 +488,7 @@ private fun SolenScreen() {
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
                 Spacer(Modifier.height(8.dp))
+            }
             }
 
             BottomBar(onCitiesClick = { searchText = ""; searchOpen = true })
@@ -754,7 +775,6 @@ private fun PrecipitationLine(hours: List<HourForecast>) {
     }
 }
 
-@Composable
 private enum class WeatherDetailIcon { HUMIDITY, WIND, SUNRISE, SUNSET }
 
 @Composable
