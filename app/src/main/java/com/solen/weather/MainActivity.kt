@@ -21,6 +21,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -43,9 +44,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AcUnit
+import androidx.compose.material.icons.outlined.Air
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.NightsStay
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Thunderstorm
+import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material.icons.outlined.WbSunny
+import androidx.compose.material.icons.outlined.WbTwilight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +63,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,6 +98,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,7 +130,9 @@ private data class HourForecast(
     val time: String,
     val temperature: Int,
     val code: Int,
-    val precipitation: Int
+    val precipitation: Int,
+    val precipitationMm: Double,
+    val isDay: Boolean
 )
 
 private data class DayForecast(
@@ -158,6 +173,7 @@ private fun SolenScreen() {
     var searchOpen by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
+    var cityResults by remember { mutableStateOf<List<Place>>(emptyList()) }
 
     LaunchedEffect(place) {
         loading = true
@@ -176,6 +192,7 @@ private fun SolenScreen() {
         if (granted) {
             requestDeviceLocation(context) { lat, lon ->
                 place = Place("Моё местоположение", lat, lon)
+                searchOpen = false
             }
         }
     }
@@ -247,42 +264,6 @@ private fun SolenScreen() {
                         searchOpen = true
                     }
                 )
-                Spacer(Modifier.width(9.dp))
-                RoundIconButton(
-                    icon = "location",
-                    description = "Моё местоположение",
-                    onClick = {
-                        if (
-                            ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.ACCESS_FINE_LOCATION
-                            ) == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            requestDeviceLocation(context) { lat, lon ->
-                                place = Place("Моё местоположение", lat, lon)
-                            }
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                        }
-                    }
-                )
-                Spacer(Modifier.width(9.dp))
-                RoundIconButton(
-                    icon = "refresh",
-                    description = "Обновить погоду",
-                    onClick = {
-                        scope.launch {
-                            loading = true
-                            error = null
-                            try {
-                                forecast = loadForecast(place)
-                            } catch (e: Exception) {
-                                error = "Не удалось обновить погоду. Проверь интернет."
-                            }
-                            loading = false
-                        }
-                    }
-                )
             }
 
             Column(
@@ -312,7 +293,7 @@ private fun SolenScreen() {
                             color = pale,
                             fontSize = 92.sp,
                             lineHeight = 98.sp,
-                            fontWeight = FontWeight.Light,
+                            fontWeight = FontWeight.Medium,
                             letterSpacing = (-5).sp
                         )
                         Text(
@@ -334,10 +315,11 @@ private fun SolenScreen() {
                             fontSize = 12.sp
                         )
                     }
-                    Text(
-                        text = current?.let { weatherEmoji(it.code, it.isDay) } ?: "◌",
-                        fontSize = 78.sp,
-                        modifier = Modifier.padding(start = 2.dp, end = 2.dp)
+                    WeatherGlyph(
+                        code = current?.code ?: 0,
+                        isDay = current?.isDay ?: true,
+                        modifier = Modifier.padding(start = 2.dp, end = 2.dp).size(66.dp),
+                        size = 58
                     )
                 }
 
@@ -385,29 +367,36 @@ private fun SolenScreen() {
                 Spacer(Modifier.height(23.dp))
                 SectionTitle("ОСАДКИ", "Планируй день спокойно")
                 Spacer(Modifier.height(11.dp))
+                val forecastHours = current?.hours.orEmpty()
+                val hasExpectedPrecipitation = forecastHours.any { it.precipitationMm >= 0.1 || it.precipitation >= 20 }
                 GlassPanel {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = current?.let {
-                                        if (it.precipitation < 0.1) "Дождя почти нет" else "Возможны осадки"
-                                    } ?: "Ждём прогноз",
+                                    text = if (current == null) "Ждём прогноз" else if (hasExpectedPrecipitation) "Возможны осадки" else "Осадков не ожидается",
                                     color = pale,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = current?.let { "Сейчас: ${it.precipitation} мм" } ?: "Обновим после загрузки",
+                                    text = if (current == null) "Обновим после загрузки" else if (hasExpectedPrecipitation) "Вероятность и интенсивность на ближайшие часы" else "В ближайшие 24 часа дождь маловероятен",
                                     color = muted,
                                     fontSize = 12.sp
                                 )
                             }
-                            Text("↗", color = Color(0xFFB9D8FF), fontSize = 26.sp)
+                            androidx.compose.material3.Icon(
+                                imageVector = if (hasExpectedPrecipitation) Icons.Outlined.WaterDrop else Icons.Outlined.WbSunny,
+                                contentDescription = null,
+                                tint = Color(0xFFB9D8FF),
+                                modifier = Modifier.size(25.dp)
+                            )
                         }
-                        Spacer(Modifier.height(17.dp))
-                        PrecipitationLine(current?.hours.orEmpty())
+                        if (current != null && hasExpectedPrecipitation) {
+                            Spacer(Modifier.height(17.dp))
+                            PrecipitationLine(forecastHours)
+                        }
                     }
                 }
 
@@ -417,13 +406,13 @@ private fun SolenScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     WeatherDetail(
                         modifier = Modifier.weight(1f),
-                        icon = "💧",
+                        icon = WeatherDetailIcon.HUMIDITY,
                         title = "Влажность",
                         value = current?.let { "${it.humidity}%" } ?: "—"
                     )
                     WeatherDetail(
                         modifier = Modifier.weight(1f),
-                        icon = "〰",
+                        icon = WeatherDetailIcon.WIND,
                         title = "Ветер",
                         value = current?.let { "${it.wind} км/ч" } ?: "—"
                     )
@@ -432,13 +421,13 @@ private fun SolenScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     WeatherDetail(
                         modifier = Modifier.weight(1f),
-                        icon = "🌅",
+                        icon = WeatherDetailIcon.SUNRISE,
                         title = "Рассвет",
                         value = current?.sunrise ?: "—"
                     )
                     WeatherDetail(
                         modifier = Modifier.weight(1f),
-                        icon = "🌇",
+                        icon = WeatherDetailIcon.SUNSET,
                         title = "Закат",
                         value = current?.sunset ?: "—"
                     )
@@ -453,8 +442,10 @@ private fun SolenScreen() {
                         if (days.isEmpty()) {
                             repeat(4) { PlaceholderDay() }
                         } else {
+                            val weekMin = days.minOf { it.min }
+                            val weekMax = days.maxOf { it.max }
                             days.forEachIndexed { index, day ->
-                                DayRow(day, index)
+                                DayRow(day, index, weekMin, weekMax)
                                 if (index < days.lastIndex) {
                                     Spacer(Modifier.height(1.dp))
                                     Box(
@@ -479,80 +470,120 @@ private fun SolenScreen() {
                 Spacer(Modifier.height(8.dp))
             }
 
-            BottomBar()
+            BottomBar(onCitiesClick = { searchText = ""; searchOpen = true })
+        }
+    }
+
+    LaunchedEffect(searchText, searchOpen) {
+        if (!searchOpen) return@LaunchedEffect
+        if (searchText.trim().length < 2) {
+            cityResults = listOf(
+                Place("Москва", 55.7558, 37.6173, "Россия"),
+                Place("Санкт-Петербург", 59.9343, 30.3351, "Россия"),
+                Place("Уфа", 54.7388, 55.9721, "Россия"),
+                Place("Казань", 55.7961, 49.1064, "Россия")
+            )
+            searching = false
+        } else {
+            delay(350)
+            searching = true
+            cityResults = try { searchCities(searchText.trim()) } catch (_: Exception) { emptyList() }
+            searching = false
         }
     }
 
     if (searchOpen) {
-        AlertDialog(
+        val focusRequester = remember { FocusRequester() }
+        val keyboard = LocalSoftwareKeyboardController.current
+        LaunchedEffect(Unit) {
+            delay(120)
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
+        androidx.compose.ui.window.Dialog(
             onDismissRequest = { searchOpen = false },
-            containerColor = Color(0xFF152338),
-            title = {
-                Text("Найти город", color = pale, fontWeight = FontWeight.SemiBold)
-            },
-            text = {
-                Column {
-                    Text(
-                        "Погода в любой точке мира",
-                        color = muted,
-                        fontSize = 13.sp
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    TextField(
-                        value = searchText,
-                        onValueChange = { searchText = it },
-                        singleLine = true,
-                        placeholder = { Text("Например, Москва") },
-                        colors = TextFieldDefaults.colors(
-                            focusedTextColor = pale,
-                            unfocusedTextColor = pale,
-                            focusedContainerColor = Color.White.copy(alpha = 0.07f),
-                            unfocusedContainerColor = Color.White.copy(alpha = 0.07f),
-                            focusedIndicatorColor = Color(0xFFB9D8FF),
-                            unfocusedIndicatorColor = Color.Transparent,
-                            cursorColor = Color(0xFFB9D8FF)
-                        )
-                    )
-                    if (searching) {
-                        Spacer(Modifier.height(10.dp))
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Color(0xFFB9D8FF),
-                            strokeWidth = 2.dp
-                        )
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+                    .background(Color(0xFF0A121F))
+                    .padding(WindowInsets.statusBars.asPaddingValues())
+                    .padding(horizontal = 22.dp, vertical = 18.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.IconButton(onClick = { searchOpen = false }) {
+                        androidx.compose.material3.Icon(Icons.Outlined.LocationOn, null, tint = muted)
                     }
+                    Text("Найти город", color = pale, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = searchText.isNotBlank() && !searching,
+                Spacer(Modifier.height(8.dp))
+                Text("ПОГОДА В ЛЮБОЙ ТОЧКЕ МИРА", color = Color(0xFFC3D2E5), fontSize = 11.sp, letterSpacing = 1.5.sp)
+                Spacer(Modifier.height(18.dp))
+                TextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    singleLine = true,
+                    leadingIcon = { androidx.compose.material3.Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFFD7E6F7)) },
+                    placeholder = { Text("Например, Москва", color = Color(0xFFB3C2D5)) },
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = pale,
+                        unfocusedTextColor = pale,
+                        focusedContainerColor = Color(0xFF1B2C43),
+                        unfocusedContainerColor = Color(0xFF1B2C43),
+                        focusedIndicatorColor = Color(0xFFB9D8FF),
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = Color(0xFFB9D8FF)
+                    )
+                )
+                Spacer(Modifier.height(18.dp))
+                androidx.compose.material3.TextButton(
                     onClick = {
-                        scope.launch {
-                            searching = true
-                            try {
-                                val found = searchCity(searchText.trim())
-                                if (found != null) {
-                                    place = found
-                                    searchOpen = false
-                                } else {
-                                    error = "Город не найден. Попробуй другое написание."
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                            requestDeviceLocation(context) { lat, lon -> place = Place("Моё местоположение", lat, lon); searchOpen = false }
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.material3.Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = Color(0xFFB9D8FF))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Определить моё местоположение", color = Color(0xFFD7E6F7))
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(if (searchText.trim().length < 2) "ПОПУЛЯРНЫЕ ГОРОДА" else "РЕЗУЛЬТАТЫ ПОИСКА", color = Color(0xFFC3D2E5), fontSize = 11.sp, letterSpacing = 1.5.sp)
+                Spacer(Modifier.height(8.dp))
+                if (searching) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 16.dp)) {
+                        CircularProgressIndicator(Modifier.size(18.dp), color = Color(0xFFB9D8FF), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Ищем город…", color = muted, fontSize = 13.sp)
+                    }
+                } else if (cityResults.isEmpty()) {
+                    Text(if (searchText.length >= 2) "Ничего не найдено. Проверь написание." else "Начни вводить название города.", color = Color(0xFFC3D2E5), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        cityResults.forEach { city ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .clickable { place = city; searchOpen = false }
+                                    .padding(horizontal = 12.dp, vertical = 15.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Icon(Icons.Outlined.Public, null, tint = Color(0xFFB9D8FF), modifier = Modifier.size(21.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(city.name, color = pale, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(city.country, color = Color(0xFFC3D2E5), fontSize = 12.sp)
                                 }
-                            } catch (e: Exception) {
-                                error = "Не удалось найти город. Проверь интернет."
+                                Text("›", color = Color(0xFFC3D2E5), fontSize = 24.sp)
                             }
-                            searching = false
                         }
                     }
-                ) {
-                    Text("Найти", color = Color(0xFFB9D8FF))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { searchOpen = false }) {
-                    Text("Отмена", color = muted)
                 }
             }
-        )
+        }
     }
 }
 
@@ -604,13 +635,8 @@ private fun RoundIconButton(
                 .border(1.dp, glassBorder, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            val image = when (icon) {
-                "search" -> Icons.Outlined.Search
-                "location" -> Icons.Outlined.LocationOn
-                else -> Icons.Outlined.Refresh
-            }
             androidx.compose.material3.Icon(
-                imageVector = image,
+                imageVector = Icons.Outlined.Search,
                 contentDescription = description,
                 tint = pale,
                 modifier = Modifier.size(19.dp)
@@ -625,7 +651,7 @@ private fun SectionTitle(title: String, subtitle: String) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = muted,
+                color = Color(0xFFC3D2E5),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 2.sp
@@ -633,7 +659,6 @@ private fun SectionTitle(title: String, subtitle: String) {
             Spacer(Modifier.height(4.dp))
             Text(text = subtitle, color = pale, fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
-        Text("SOLEN", color = Color.White.copy(alpha = 0.28f), fontSize = 9.sp, letterSpacing = 1.2.sp)
     }
 }
 
@@ -667,7 +692,7 @@ private fun HourChip(hour: HourForecast, highlight: Boolean) {
             fontSize = if (highlight) 8.sp else 10.sp,
             fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal
         )
-        Text(weatherEmoji(hour.code, true), fontSize = 22.sp)
+        WeatherGlyph(hour.code, hour.isDay, Modifier.size(25.dp), size = 22)
         Text("${hour.temperature}°", color = pale, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         Text(
             if (hour.precipitation > 0) "${hour.precipitation}%" else " ",
@@ -730,12 +755,21 @@ private fun PrecipitationLine(hours: List<HourForecast>) {
 }
 
 @Composable
+private enum class WeatherDetailIcon { HUMIDITY, WIND, SUNRISE, SUNSET }
+
+@Composable
 private fun WeatherDetail(
     modifier: Modifier,
-    icon: String,
+    icon: WeatherDetailIcon,
     title: String,
     value: String
 ) {
+    val image = when (icon) {
+        WeatherDetailIcon.HUMIDITY -> Icons.Outlined.WaterDrop
+        WeatherDetailIcon.WIND -> Icons.Outlined.Air
+        WeatherDetailIcon.SUNRISE -> Icons.Outlined.WbTwilight
+        WeatherDetailIcon.SUNSET -> Icons.Outlined.WbTwilight
+    }
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(21.dp))
@@ -743,7 +777,7 @@ private fun WeatherDetail(
             .border(1.dp, glassBorder, RoundedCornerShape(21.dp))
             .padding(15.dp)
     ) {
-        Text(icon, fontSize = 19.sp)
+        androidx.compose.material3.Icon(imageVector = image, contentDescription = title, tint = Color(0xFFD7E6F7), modifier = Modifier.size(20.dp))
         Spacer(Modifier.height(12.dp))
         Text(title, color = muted, fontSize = 11.sp)
         Spacer(Modifier.height(4.dp))
@@ -752,7 +786,7 @@ private fun WeatherDetail(
 }
 
 @Composable
-private fun DayRow(day: DayForecast, index: Int) {
+private fun DayRow(day: DayForecast, index: Int, weekMin: Int, weekMax: Int) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -763,14 +797,14 @@ private fun DayRow(day: DayForecast, index: Int) {
             fontSize = 13.sp,
             modifier = Modifier.weight(1.2f)
         )
-        Text(weatherEmoji(day.code, true), fontSize = 20.sp, modifier = Modifier.width(43.dp))
+        WeatherGlyph(day.code, true, Modifier.width(43.dp).size(22.dp), size = 19)
         Text(
             text = "${day.min}°",
             color = muted,
             fontSize = 13.sp,
             modifier = Modifier.width(34.dp)
         )
-        TemperatureRange(day.min, day.max, Modifier.weight(1f))
+        TemperatureRange(day.min, day.max, weekMin, weekMax, Modifier.weight(1f))
         Text(
             text = "${day.max}°",
             color = pale,
@@ -782,23 +816,23 @@ private fun DayRow(day: DayForecast, index: Int) {
 }
 
 @Composable
-private fun TemperatureRange(min: Int, max: Int, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.height(5.dp)) {
+private fun TemperatureRange(min: Int, max: Int, weekMin: Int, weekMax: Int, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.height(6.dp)) {
         val width = size.width
         drawLine(
-            color = Color.White.copy(alpha = 0.10f),
+            color = Color.White.copy(alpha = 0.16f),
             start = Offset(0f, size.height / 2),
             end = Offset(width, size.height / 2),
             strokeWidth = 5.dp.toPx(),
             cap = StrokeCap.Round
         )
-        val spread = (max - min).coerceAtLeast(1)
-        val offset = (min + 15).coerceIn(0, 40) / 40f
-        val barWidth = (spread / 40f).coerceIn(0.18f, 0.92f) * width
+        val spread = (weekMax - weekMin).coerceAtLeast(1)
+        val start = ((min - weekMin).toFloat() / spread).coerceIn(0f, 1f)
+        val end = ((max - weekMin).toFloat() / spread).coerceIn(start, 1f)
         drawLine(
-            brush = Brush.horizontalGradient(listOf(Color(0xFF74B5F2), Color(0xFFE8C58D))),
-            start = Offset(width * offset, size.height / 2),
-            end = Offset((width * offset + barWidth).coerceAtMost(width), size.height / 2),
+            brush = Brush.horizontalGradient(listOf(Color(0xFF79BDF7), Color(0xFFE9D5AD))),
+            start = Offset(width * start, size.height / 2),
+            end = Offset(width * end, size.height / 2),
             strokeWidth = 5.dp.toPx(),
             cap = StrokeCap.Round
         )
@@ -819,7 +853,7 @@ private fun PlaceholderDay() {
 }
 
 @Composable
-private fun BottomBar() {
+private fun BottomBar(onCitiesClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -834,19 +868,22 @@ private fun BottomBar() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BottomItem("☼", "Сегодня", true)
-        BottomItem("⌁", "Карта", false)
-        BottomItem("♡", "Места", false)
+        BottomItem(Icons.Outlined.WbSunny, "Сегодня", true, {})
+        BottomItem(Icons.Outlined.Public, "Города", false, onCitiesClick)
     }
 }
 
 @Composable
-private fun BottomItem(symbol: String, label: String, selected: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            symbol,
-            color = if (selected) Color(0xFFB9D8FF) else muted.copy(alpha = 0.72f),
-            fontSize = 20.sp
+private fun BottomItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 2.dp)
+    ) {
+        androidx.compose.material3.Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (selected) Color(0xFFB9D8FF) else Color(0xFFC3D2E5),
+            modifier = Modifier.size(21.dp)
         )
         Spacer(Modifier.height(3.dp))
         Text(
@@ -873,7 +910,7 @@ private suspend fun loadForecast(place: Place): WeatherForecast = withContext(Di
         "https://api.open-meteo.com/v1/forecast" +
             "?latitude=${place.latitude}&longitude=${place.longitude}" +
             "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m" +
-            "&hourly=temperature_2m,precipitation_probability,weather_code" +
+            "&hourly=temperature_2m,precipitation_probability,precipitation,weather_code,is_day" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset" +
             "&timezone=auto&forecast_days=7"
     )
@@ -891,6 +928,8 @@ private suspend fun loadForecast(place: Place): WeatherForecast = withContext(Di
         val times = hourly.getJSONArray("time")
         val temps = hourly.getJSONArray("temperature_2m")
         val probabilities = hourly.getJSONArray("precipitation_probability")
+        val hourlyPrecipitation = hourly.getJSONArray("precipitation")
+        val hourlyIsDay = hourly.getJSONArray("is_day")
         val codes = hourly.getJSONArray("weather_code")
         val currentTime = now.getString("time")
         var start = 0
@@ -905,7 +944,9 @@ private suspend fun loadForecast(place: Place): WeatherForecast = withContext(Di
                 time = times.getString(i).substringAfter("T").take(5),
                 temperature = temps.getDouble(i).roundToInt(),
                 code = codes.getInt(i),
-                precipitation = probabilities.getInt(i)
+                precipitation = probabilities.getInt(i),
+                precipitationMm = hourlyPrecipitation.getDouble(i),
+                isDay = hourlyIsDay.getInt(i) == 1
             )
         }
         val dailyTimes = daily.getJSONArray("time")
@@ -940,24 +981,26 @@ private suspend fun loadForecast(place: Place): WeatherForecast = withContext(Di
     }
 }
 
-private suspend fun searchCity(query: String): Place? = withContext(Dispatchers.IO) {
+private suspend fun searchCities(query: String): List<Place> = withContext(Dispatchers.IO) {
     val safeQuery = URLEncoder.encode(query, "UTF-8")
-    val url = URL("https://geocoding-api.open-meteo.com/v1/search?name=$safeQuery&count=1&language=ru&format=json")
+    val url = URL("https://geocoding-api.open-meteo.com/v1/search?name=$safeQuery&count=6&language=ru&format=json")
     val connection = url.openConnection() as HttpURLConnection
     connection.connectTimeout = 12000
     connection.readTimeout = 12000
     try {
-        if (connection.responseCode !in 200..299) return@withContext null
+        if (connection.responseCode !in 200..299) return@withContext emptyList()
         val root = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-        val results = root.optJSONArray("results") ?: return@withContext null
-        if (results.length() == 0) return@withContext null
-        val found = results.getJSONObject(0)
-        Place(
-            name = found.optString("name", query),
-            latitude = found.getDouble("latitude"),
-            longitude = found.getDouble("longitude"),
-            country = found.optString("country", "")
-        )
+        val results = root.optJSONArray("results") ?: return@withContext emptyList()
+        (0 until results.length()).map { index ->
+            val found = results.getJSONObject(index)
+            Place(
+                name = found.optString("name", query),
+                latitude = found.getDouble("latitude"),
+                longitude = found.getDouble("longitude"),
+                country = listOf(found.optString("admin1", ""), found.optString("country", ""))
+                    .filter { it.isNotBlank() }.distinct().joinToString(", ")
+            )
+        }
     } finally {
         connection.disconnect()
     }
@@ -1027,18 +1070,23 @@ private fun weatherDescription(code: Int): String = when (code) {
     else -> "Переменная погода"
 }
 
-private fun weatherEmoji(code: Int, isDay: Boolean): String = when (code) {
-    0 -> if (isDay) "☀️" else "🌙"
-    1 -> if (isDay) "🌤️" else "☁️"
-    2 -> "⛅"
-    3 -> "☁️"
-    45, 48 -> "🌫️"
-    51, 53, 55, 56, 57 -> "🌦️"
-    61, 63, 65, 66, 67 -> "🌧️"
-    71, 73, 75, 77, 85, 86 -> "❄️"
-    80, 81, 82 -> "🌧️"
-    95, 96, 99 -> "⛈️"
-    else -> "🌤️"
+@Composable
+private fun WeatherGlyph(code: Int, isDay: Boolean, modifier: Modifier = Modifier, size: Int = 22) {
+    val image = when (code) {
+        0 -> if (isDay) Icons.Outlined.WbSunny else Icons.Outlined.NightsStay
+        1 -> if (isDay) Icons.Outlined.WbSunny else Icons.Outlined.NightsStay
+        2, 3, 45, 48 -> Icons.Outlined.Cloud
+        51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> Icons.Outlined.WaterDrop
+        71, 73, 75, 77, 85, 86 -> Icons.Outlined.AcUnit
+        95, 96, 99 -> Icons.Outlined.Thunderstorm
+        else -> if (isDay) Icons.Outlined.WbSunny else Icons.Outlined.NightsStay
+    }
+    androidx.compose.material3.Icon(
+        imageVector = image,
+        contentDescription = weatherDescription(code),
+        tint = Color(0xFFD7E6F7),
+        modifier = modifier.size(size.dp)
+    )
 }
 
 private fun dayName(date: String): String {
